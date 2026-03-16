@@ -230,10 +230,12 @@ body.has-maximized .comparison-area {
 }
 
 iframe {
-    width: 100%;
-    height: 100%;
+    width: 166.66%; /* 100 / 0.6 */
+    height: 166.66%;
     border: none;
-    background: #fff; /* Most HTML tests assume white bg */
+    background: #fff;
+    transform: scale(0.6);
+    transform-origin: top left;
 }
 
 /* Animations */

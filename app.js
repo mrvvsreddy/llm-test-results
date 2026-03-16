@@ -27,10 +27,18 @@ async function initDashboard() {
             item.className = 'test-item animate-fade-in';
             item.style.animationDelay = `${index * 0.05}s`;
             item.innerHTML = `
-                <span class="test-date">${test.date}</span>
-                <span class="test-title">${test.title}</span>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <span class="test-date">${test.date}</span>
+                        <span class="test-title">${test.title}</span>
+                    </div>
+                    <a href="${test.path}/view.html" class="btn-icon" title="Open Dedicated Page" style="text-decoration: none;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    </a>
+                </div>
             `;
-            item.onclick = () => {
+            item.onclick = (e) => {
+                if (e.target.closest('a')) return; // Don't trigger loadTest if clicking the link
                 document.querySelectorAll('.test-item').forEach(el => el.classList.remove('active'));
                 item.classList.add('active');
                 loadTest(test);
