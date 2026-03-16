@@ -1,0 +1,13 @@
+[
+  {
+    "id": "2026-03-16_Template-Test",
+    "path": "tests/2026-03-16_Template-Test",
+    "title": "Template Test",
+    "model": "Claude vs GPT",
+    "prompt": "Example prompt here...",
+    "date": "2026-03-16",
+    "tags": [
+      "example"
+    ]
+  }
+]

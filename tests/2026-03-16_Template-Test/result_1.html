@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4-Point Pendulum Simulation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a1a;
+  overflow: hidden;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+canvas {
+  display: block;
+  cursor: grab;
+}
+canvas:active { cursor: grabbing; }
+
+#ui {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  color: #8899bb;
+  font-size: 13px;
+  pointer-events: none;
+  line-height: 1.7;
+  text-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+#ui h1 {
+  font-size: 18px;
+  color: #aabbdd;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 10;
+}
+#controls button {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #aabbdd;
+  padding: 8px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+  backdrop-filter: blur(10px);
+}
+#controls button:hover {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.25);
+  color: #ddeeff;
+}
+#trail-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8899bb;
+  font-size: 13px;
+}
+#trail-toggle label { cursor: pointer; }
+#trail-toggle input {
+  accent-color: #5588cc;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>4-Point Pendulum</h1>
+  <div>Click & drag any bob to interact</div>
+  <div>Chaotic motion from coupled physics</div>
+</div>
+
+<div id="trail-toggle">
+  <label for="trails">Trails</label>
+  <input type="checkbox" id="trails" checked>
+</div>
+
+<div id="controls">
+  <button onclick="resetPendulum(0)">Drop Right</button>
+  <button onclick="resetPendulum(1)">Drop Left</button>
+  <button onclick="resetPendulum(2)">Spread</button>
+  <button onclick="resetPendulum(3)">Random</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const trailCheckbox = document.getElementById('trails');
+
+let W, H, anchorX, anchorY;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  anchorX = W / 2;
+  anchorY = H * 0.18;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Physics constants
+const GRAVITY = 980;
+const SUB_STEPS = 16;
+const CONSTRAINT_ITERS = 20;
+const DAMPING = 0.9997;
+
+// Pendulum config
+const NUM_POINTS = 4;
+const LINK_LENGTH = Math.min(W, H) * 0.12;
+const BOB_MASS = [1, 1.2, 1.4, 1.6];
+const BOB_RADIUS = [10, 12, 14, 16];
+const COLORS = [
+  { r: 80, g: 180, b: 255 },
+  { r: 120, g: 100, b: 255 },
+  { r: 255, g: 100, b: 180 },
+  { r: 255, g: 180, b: 60 }
+];
+
+// Trail buffers
+const TRAIL_MAX = 200;
+let trails = [];
+
+// Pendulum state (Verlet)
+let points = [];
+
+function initPoints(mode) {
+  points = [];
+  trails = Array.from({ length: NUM_POINTS }, () => []);
+
+  for (let i = 0; i < NUM_POINTS; i++) {
+    let x, y;
+    const base = { x: anchorX, y: anchorY };
+
+    if (mode === 0) {
+      // All extended to the right
+      x = anchorX + LINK_LENGTH * (i + 1);
+      y = anchorY;
+    } else if (mode === 1) {
+      // All extended to the left
+      x = anchorX - LINK_LENGTH * (i + 1);
+      y = anchorY;
+    } else if (mode === 2) {
+      // Spread in alternating directions
+      const angle = (i % 2 === 0) ? Math.PI * 0.35 : -Math.PI * 0.35;
+      const prev = i === 0 ? base : points[i - 1];
+      x = prev.x + Math.sin(angle) * LINK_LENGTH;
+      y = prev.y + Math.cos(angle) * LINK_LENGTH;
+    } else {
+      // Random angles
+      const angle = (Math.random() - 0.5) * Math.PI * 1.6;
+      const prev = i === 0 ? base : points[i - 1];
+      x = prev.x + Math.sin(angle) * LINK_LENGTH;
+      y = prev.y + Math.cos(angle) * LINK_LENGTH;
+    }
+
+    points.push({
+      x, y,
+      px: x, py: y,
+      mass: BOB_MASS[i],
+      radius: BOB_RADIUS[i]
+    });
+  }
+}
+
+function resetPendulum(mode) {
+  initPoints(mode);
+}
+
+initPoints(0);
+
+// Mouse state
+let mouse = { x: 0, y: 0, down: false, dragIndex: -1 };
+
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.dragIndex = findClosestBob(e.clientX, e.clientY);
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mouseup', () => {
+  mouse.down = false;
+  mouse.dragIndex = -1;
+});
+canvas.addEventListener('mouseleave', () => {
+  mouse.down = false;
+  mouse.dragIndex = -1;
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.down = true;
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.dragIndex = findClosestBob(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => {
+  mouse.down = false;
+  mouse.dragIndex = -1;
+});
+
+function findClosestBob(mx, my) {
+  let minDist = 60;
+  let idx = -1;
+  for (let i = 0; i < points.length; i++) {
+    const dx = points[i].x - mx;
+    const dy = points[i].y - my;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < minDist) {
+      minDist = d;
+      idx = i;
+    }
+  }
+  return idx;
+}
+
+// Physics step
+function simulate(dt) {
+  const subDt = dt / SUB_STEPS;
+
+  for (let s = 0; s < SUB_STEPS; s++) {
+    // Apply Verlet integration with gravity
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+
+      if (mouse.down && mouse.dragIndex === i) {
+        // Dragged point: move towards mouse
+        p.px = p.x;
+        p.py = p.y;
+        p.x += (mouse.x - p.x) * 0.4;
+        p.y += (mouse.y - p.y) * 0.4;
+        continue;
+      }
+
+      const vx = (p.x - p.px) * DAMPING;
+      const vy = (p.y - p.py) * DAMPING;
+
+      p.px = p.x;
+      p.py = p.y;
+
+      p.x += vx;
+      p.y += vy + GRAVITY * subDt * subDt;
+    }
+
+    // Solve distance constraints
+    for (let iter = 0; iter < CONSTRAINT_ITERS; iter++) {
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const anchor = i === 0
+          ? { x: anchorX, y: anchorY, mass: Infinity }
+          : points[i - 1];
+
+        const dx = p.x - anchor.x;
+        const dy = p.y - anchor.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        const diff = (dist - LINK_LENGTH) / dist;
+
+        if (anchor.mass === Infinity) {
+          // Anchor is fixed
+          p.x -= dx * diff;
+          p.y -= dy * diff;
+        } else {
+          const totalMass = p.mass + anchor.mass;
+          const p1Ratio = p.mass / totalMass;
+          const p2Ratio = anchor.mass / totalMass;
+
+          // Don't move dragged points via constraints
+          const anchorDragged = mouse.down && mouse.dragIndex === (i - 1);
+          const thisDragged = mouse.down && mouse.dragIndex === i;
+
+          if (!thisDragged) {
+            p.x -= dx * diff * (anchorDragged ? 1.0 : p1Ratio);
+            p.y -= dy * diff * (anchorDragged ? 1.0 : p1Ratio);
+          }
+          if (!anchorDragged) {
+            anchor.x += dx * diff * (thisDragged ? 1.0 : p2Ratio);
+            anchor.y += dy * diff * (thisDragged ? 1.0 : p2Ratio);
+          }
+        }
+      }
+    }
+  }
+
+  // Record trails
+  for (let i = 0; i < points.length; i++) {
+    trails[i].push({ x: points[i].x, y: points[i].y });
+    if (trails[i].length > TRAIL_MAX) trails[i].shift();
+  }
+}
+
+// Rendering
+function drawTrails() {
+  if (!trailCheckbox.checked) return;
+
+  for (let i = 0; i < points.length; i++) {
+    const trail = trails[i];
+    if (trail.length < 2) continue;
+
+    const c = COLORS[i];
+
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+
+    for (let j = 1; j < trail.length; j++) {
+      ctx.lineTo(trail[j].x, trail[j].y);
+    }
+
+    ctx.strokeStyle = `rgba(${c.r}, ${c.g}, ${c.b}, 0)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Draw trail with fading opacity
+    for (let j = 1; j < trail.length; j++) {
+      const alpha = (j / trail.length) * 0.5;
+      const width = (j / trail.length) * 3;
+      ctx.beginPath();
+      ctx.moveTo(trail[j - 1].x, trail[j - 1].y);
+      ctx.lineTo(trail[j].x, trail[j].y);
+      ctx.strokeStyle = `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})`;
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+  }
+}
+
+function drawPendulum() {
+  // Draw rods
+  let prevX = anchorX, prevY = anchorY;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const c = COLORS[i];
+
+    // Rod gradient
+    const grad = ctx.createLinearGradient(prevX, prevY, p.x, p.y);
+    if (i === 0) {
+      grad.addColorStop(0, 'rgba(150, 170, 200, 0.8)');
+    } else {
+      const pc = COLORS[i - 1];
+      grad.addColorStop(0, `rgba(${pc.r}, ${pc.g}, ${pc.b}, 0.6)`);
+    }
+    grad.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0.6)`);
+
+    ctx.beginPath();
+    ctx.moveTo(prevX, prevY);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    // Thin highlight on rod
+    ctx.beginPath();
+    ctx.moveTo(prevX, prevY);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = `rgba(255, 255, 255, 0.08)`;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    prevX = p.x;
+    prevY = p.y;
+  }
+
+  // Draw anchor
+  ctx.beginPath();
+  ctx.arc(anchorX, anchorY, 8, 0, Math.PI * 2);
+  const anchorGrad = ctx.createRadialGradient(anchorX - 2, anchorY - 2, 0, anchorX, anchorY, 8);
+  anchorGrad.addColorStop(0, '#ddeeff');
+  anchorGrad.addColorStop(1, '#556677');
+  ctx.fillStyle = anchorGrad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Draw bobs
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const c = COLORS[i];
+    const r = p.radius;
+    const isHovered = mouse.dragIndex === i && mouse.down;
+
+    // Glow
+    const glowR = isHovered ? r * 4 : r * 2.5;
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+    glow.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, ${isHovered ? 0.4 : 0.2})`);
+    glow.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0)`);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Bob body
+    const bobGrad = ctx.createRadialGradient(p.x - r * 0.3, p.y - r * 0.3, 0, p.x, p.y, r);
+    bobGrad.addColorStop(0, `rgba(${Math.min(255, c.r + 80)}, ${Math.min(255, c.g + 80)}, ${Math.min(255, c.b + 80)}, 1)`);
+    bobGrad.addColorStop(0.7, `rgba(${c.r}, ${c.g}, ${c.b}, 1)`);
+    bobGrad.addColorStop(1, `rgba(${Math.max(0, c.r - 40)}, ${Math.max(0, c.g - 40)}, ${Math.max(0, c.b - 40)}, 1)`);
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isHovered ? r * 1.2 : r, 0, Math.PI * 2);
+    ctx.fillStyle = bobGrad;
+    ctx.fill();
+
+    // Specular highlight
+    ctx.beginPath();
+    ctx.arc(p.x - r * 0.25, p.y - r * 0.25, r * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fill();
+
+    // Border ring
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isHovered ? r * 1.2 : r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 255, 255, 0.15)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawBackground() {
+  // Subtle radial vignette
+  const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  grad.addColorStop(0, '#0e1028');
+  grad.addColorStop(1, '#050510');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid dots
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+  const spacing = 40;
+  for (let x = spacing; x < W; x += spacing) {
+    for (let y = spacing; y < H; y += spacing) {
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Animation loop
+let lastTime = performance.now();
+
+function loop(now) {
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  // Clamp dt to prevent explosion
+  if (dt > 0.033) dt = 0.033;
+
+  simulate(dt);
+
+  drawBackground();
+  drawTrails();
+  drawPendulum();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

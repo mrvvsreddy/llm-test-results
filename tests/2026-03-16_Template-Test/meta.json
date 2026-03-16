@@ -1,0 +1,10 @@
+{
+  "title": "4 Pendulum",
+  "model_a": "claude-opus-4-6-thinking",
+  "model_b": "gpt-5.3-codex",
+  "prompt": "Create a working 4-point pendulum physics simulation in plain HTML/CSS/JavaScript. Single file, no dependencies. Include mouse drag interaction. Make it visual and smooth.",
+  "date": "2026-03-16",
+  "tags": [
+    "example"
+  ]
+}

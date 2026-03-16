@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4-Point Pendulum Simulation</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at 30% 20%, #1e293b 0%, #0b1020 50%, #020617 100%);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+
+    #sim {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+    }
+
+    #sim.dragging {
+      cursor: grabbing;
+    }
+
+    .hud {
+      position: fixed;
+      top: 0;
+      left: 0;
+      padding: 0.85rem 1rem;
+      color: #dbeafe;
+      font-size: 0.92rem;
+      letter-spacing: 0.01em;
+      user-select: none;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    }
+
+    .hud b {
+      color: #ffffff;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="sim"></canvas>
+  <div class="hud"><b>4-Point Pendulum</b> - drag any bob with mouse or touch</div>
+
+  <script>
+    const canvas = document.getElementById("sim");
+    const ctx = canvas.getContext("2d");
+
+    let width = 0;
+    let height = 0;
+    let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    const gravity = 1400;
+    const damping = 0.999;
+    const iterations = 10;
+    const segmentLength = 115;
+
+    const anchor = { x: 0, y: 0 };
+    const points = [];
+    const links = [];
+
+    let pointer = { x: 0, y: 0, down: false, id: null };
+    let draggedIndex = -1;
+
+    function makePoint(x, y, fixed = false) {
+      return { x, y, px: x, py: y, fixed, r: fixed ? 7 : 12 };
+    }
+
+    function resetPendulum() {
+      points.length = 0;
+      links.length = 0;
+
+      anchor.x = width * 0.5;
+      anchor.y = Math.max(80, height * 0.16);
+      points.push(makePoint(anchor.x, anchor.y, true));
+
+      const angle = 0.7;
+      for (let i = 1; i <= 4; i += 1) {
+        const x = anchor.x + Math.sin(angle) * segmentLength * i;
+        const y = anchor.y + Math.cos(angle) * segmentLength * i;
+        points.push(makePoint(x, y));
+      }
+
+      for (let i = 0; i < points.length - 1; i += 1) {
+        links.push({ a: i, b: i + 1, length: segmentLength });
+      }
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      resetPendulum();
+    }
+
+    function integrate(dt) {
+      const dt2 = dt * dt;
+      for (let i = 0; i < points.length; i += 1) {
+        const p = points[i];
+        if (p.fixed) continue;
+
+        const vx = (p.x - p.px) * damping;
+        const vy = (p.y - p.py) * damping;
+
+        p.px = p.x;
+        p.py = p.y;
+
+        p.x += vx;
+        p.y += vy + gravity * dt2;
+      }
+    }
+
+    function constrain() {
+      points[0].x = anchor.x;
+      points[0].y = anchor.y;
+
+      for (let k = 0; k < iterations; k += 1) {
+        for (let i = 0; i < links.length; i += 1) {
+          const link = links[i];
+          const p1 = points[link.a];
+          const p2 = points[link.b];
+
+          let dx = p2.x - p1.x;
+          let dy = p2.y - p1.y;
+          const dist = Math.hypot(dx, dy) || 0.0001;
+          const error = (dist - link.length) / dist;
+
+          dx *= 0.5 * error;
+          dy *= 0.5 * error;
+
+          if (!p1.fixed) {
+            p1.x += dx;
+            p1.y += dy;
+          }
+
+          if (!p2.fixed) {
+            p2.x -= dx;
+            p2.y -= dy;
+          }
+        }
+
+        points[0].x = anchor.x;
+        points[0].y = anchor.y;
+
+        // Keep bobs visible by softly confining them inside the viewport.
+        for (let i = 1; i < points.length; i += 1) {
+          const p = points[i];
+          p.x = Math.max(p.r, Math.min(width - p.r, p.x));
+          p.y = Math.max(p.r, Math.min(height - p.r, p.y));
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+
+      const glow = ctx.createRadialGradient(anchor.x, anchor.y, 10, anchor.x, anchor.y, Math.max(width, height) * 0.55);
+      glow.addColorStop(0, "rgba(125, 211, 252, 0.08)");
+      glow.addColorStop(1, "rgba(125, 211, 252, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      for (let i = 0; i < links.length; i += 1) {
+        const p1 = points[links[i].a];
+        const p2 = points[links[i].b];
+        const t = i / links.length;
+        ctx.strokeStyle = `rgba(${120 + 80 * t}, ${180 + 40 * t}, 255, 0.92)`;
+        ctx.lineWidth = 3.5 - i * 0.45;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < points.length; i += 1) {
+        const p = points[i];
+        const isAnchor = p.fixed;
+
+        ctx.beginPath();
+        ctx.fillStyle = isAnchor ? "#f8fafc" : i === draggedIndex ? "#fef08a" : `hsl(${192 + i * 22} 95% 68%)`;
+        ctx.shadowColor = isAnchor ? "rgba(248,250,252,0.25)" : "rgba(56,189,248,0.45)";
+        ctx.shadowBlur = isAnchor ? 8 : 16;
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+    }
+
+    function pickPoint(x, y) {
+      let closest = -1;
+      let bestDist = 28;
+      for (let i = 1; i < points.length; i += 1) {
+        const p = points[i];
+        const d = Math.hypot(x - p.x, y - p.y);
+        if (d < bestDist) {
+          bestDist = d;
+          closest = i;
+        }
+      }
+      return closest;
+    }
+
+    function pointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    function onPointerDown(e) {
+      const pos = pointerPos(e);
+      pointer = { x: pos.x, y: pos.y, down: true, id: e.pointerId };
+      draggedIndex = pickPoint(pointer.x, pointer.y);
+      if (draggedIndex !== -1) {
+        canvas.classList.add("dragging");
+        canvas.setPointerCapture(e.pointerId);
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!pointer.down || pointer.id !== e.pointerId) return;
+      const pos = pointerPos(e);
+      pointer.x = pos.x;
+      pointer.y = pos.y;
+      if (draggedIndex !== -1) {
+        const p = points[draggedIndex];
+        p.x = pointer.x;
+        p.y = pointer.y;
+        p.px = pointer.x;
+        p.py = pointer.y;
+      }
+    }
+
+    function onPointerUp(e) {
+      if (pointer.id !== e.pointerId) return;
+      pointer.down = false;
+      pointer.id = null;
+      draggedIndex = -1;
+      canvas.classList.remove("dragging");
+      if (canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
+    }
+
+    let last = performance.now();
+    function frame(now) {
+      const dt = Math.min(0.033, (now - last) / 1000);
+      last = now;
+
+      integrate(dt);
+      constrain();
+      draw();
+
+      requestAnimationFrame(frame);
+    }
+
+    window.addEventListener("resize", resize);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("lostpointercapture", () => {
+      pointer.down = false;
+      draggedIndex = -1;
+      canvas.classList.remove("dragging");
+    });
+
+    resize();
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

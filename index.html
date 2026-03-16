@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Stress Test Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo-section">
+                <h1>LLM Stress Tests</h1>
+                <p style="font-size: 0.8rem; color: var(--text-secondary);">Insight Analytics Hub</p>
+            </div>
+            <div class="test-list" id="testList">
+                <!-- Data populated by app.js -->
+            </div>
+        </aside>
+
+        <main class="main-viewport">
+            <div class="top-bar">
+                <div class="meta-grid" id="metaGrid">
+                    <div class="meta-item">
+                        <label>Select a test from the sidebar</label>
+                        <p>Waiting for selection...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="comparison-area" id="comparisonArea">
+                <div class="result-pane">
+                    <div class="pane-header" id="pane1Header">Model A</div>
+                    <div class="iframe-container">
+                        <iframe id="iframe1" src="about:blank"></iframe>
+                    </div>
+                </div>
+                <div class="result-pane">
+                    <div class="pane-header" id="pane2Header">Model B</div>
+                    <div class="iframe-container">
+                        <iframe id="iframe2" src="about:blank"></iframe>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-overlay" id="codeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title" id="modalTitle">Source Code</span>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <button class="btn-copy" id="modalCopyBtn">Copy Everything</button>
+                    <button class="btn-close" onclick="closeModal()">&times;</button>
+                </div>
+            </div>
+            <pre class="code-viewer" id="codeContainer"></pre>
+        </div>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
